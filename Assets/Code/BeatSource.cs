@@ -11,8 +11,9 @@ public class BeatSource : MonoBehaviour
     [Header("Eye Blink Note Sequence")]
     public AudioClip[] eyeBlinkNotes; // Array of different pitched notes
     public bool randomizeEyeBlinkNotes = false; // Whether to play notes randomly or sequentially
-    public bool useMusicalScale = true; // Whether to use a preset musical scale
-
+    
+    [Header("Settings")]
+    
     [Header("Settings")]
     [Range(0, 1)]
     public float smileThreshold = 0.7f;
@@ -29,32 +30,11 @@ public class BeatSource : MonoBehaviour
     protected float jawOpenCooldown = 0f;
     protected float browRaiseCooldown = 0f;
     
-    // Reference to visual feedback manager
-    public VisualFeedback visualFeedback;
-    
-    // Eye blink note sequence
+    // Track the current note index for sequential playing
     protected int currentNoteIndex = 0;
     
-    [Header("Musical Note Generation")]
-    public bool generateNotes = false; // Set to true to auto-generate notes
-    public AudioClip baseNoteClip; // The base note clip that will be pitched
-    public NoteScale noteScale = NoteScale.Major;
-    public enum NoteScale { Major, Minor, Pentatonic, Blues, Chromatic }
-    [Range(0, 3)]
-    public int octaveRange = 1; // How many octaves the notes will span
-    [Range(-12, 12)]
-    public int baseNoteOffset = 0; // Shift the entire scale up or down by semitones
-    
-    // Dictionary for musical scales (semitones from root)
-    protected Dictionary<NoteScale, int[]> musicalScales = new Dictionary<NoteScale, int[]>()
-    {
-        { NoteScale.Major, new int[] { 0, 2, 4, 5, 7, 9, 11 } },
-        { NoteScale.Minor, new int[] { 0, 2, 3, 5, 7, 8, 10 } },
-        { NoteScale.Pentatonic, new int[] { 0, 2, 4, 7, 9 } },
-        { NoteScale.Blues, new int[] { 0, 3, 5, 6, 7, 10 } },
-        { NoteScale.Chromatic, new int[] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 } }
-    };
-    
+    // Reference to visual feedback manager
+    public VisualFeedback visualFeedback;
     
     void Start()
     {
@@ -76,14 +56,6 @@ public class BeatSource : MonoBehaviour
         {
             Debug.Log("BeatSource: Found VisualFeedback");
         }
-        
-        // Set up the note clips for eye blinks if auto-generation is enabled
-        if (generateNotes && baseNoteClip != null)
-        {
-            GenerateNoteSequence();
-        }
-        
-        Debug.Log("BeatSource configuration: " + eyeBlinkNotes.Length + " eye blink notes, randomize: " + randomizeEyeBlinkNotes);
     }
     
     protected AudioSource CreateAudioSource(string name)
@@ -92,34 +64,17 @@ public class BeatSource : MonoBehaviour
         audioObj.transform.parent = this.transform;
         AudioSource source = audioObj.AddComponent<AudioSource>();
         source.playOnAwake = false;
+        
+        // Force use of speaker on mobile devices
+        #if UNITY_ANDROID || UNITY_IOS
+        source.ignoreListenerPause = true;
+        //source.ignoreListenerVolume = true;
+        source.spatialBlend = 0f; // Force 2D audio (non-spatial)
+        source.priority = 0; // Highest priority
+        source.volume = 1.0f; // Full volume
+        #endif
+        
         return source;
-    }
-    
-    // Method to generate a scale of notes from a single base note by adjusting pitch
-    protected void GenerateNoteSequence()
-    {
-        if (baseNoteClip == null)
-        {
-            Debug.LogError("Base note clip is not assigned. Cannot generate note sequence.");
-            return;
-        }
-        
-        // Get the scale intervals
-        int[] scaleIntervals = musicalScales[noteScale];
-        
-        // Calculate how many notes we need based on the scale and octave range
-        int totalNotes = scaleIntervals.Length * (octaveRange + 1);
-        eyeBlinkNotes = new AudioClip[totalNotes];
-        
-        // Create a dummy object to hold our generated clips
-        for (int i = 0; i < totalNotes; i++)
-        {
-            // For organizational purposes, we'll just reference the same clip multiple times
-            // The actual pitch change will happen at playback time
-            eyeBlinkNotes[i] = baseNoteClip;
-        }
-        
-        Debug.Log($"Generated {eyeBlinkNotes.Length} notes in {noteScale} scale");
     }
     
     void Update()
@@ -141,7 +96,7 @@ public class BeatSource : MonoBehaviour
         }
     }
     
-    // Method for triggering eye blink audio (now with note sequence)
+    // Method for triggering eye blink audio (with note sequence)
     public void TriggerEyeBlinkAudio(bool isBlinking)
     {
         if (isBlinking && eyeBlinkCooldown <= 0f)
@@ -208,7 +163,7 @@ public class BeatSource : MonoBehaviour
         }
     }
     
-    // Play the eye blink note - virtual to allow override in child classes
+    // Play the eye blink note with index
     protected virtual void PlayEyeBlinkClip(int noteIndex)
     {
         // Verify clip array is valid
@@ -224,31 +179,11 @@ public class BeatSource : MonoBehaviour
             return;
         }
         
-        // If we're using note generation with pitch shifting
-        if (generateNotes && baseNoteClip != null)
-        {
-            // Calculate the pitch multiplier based on semitone offset
-            // The formula for semitone to pitch is: 2^(semitones/12)
-            int[] scaleIntervals = musicalScales[noteScale];
-            int octave = noteIndex / scaleIntervals.Length;
-            int scaleIndex = noteIndex % scaleIntervals.Length;
-            int semitoneOffset = scaleIntervals[scaleIndex] + (octave * 12) + baseNoteOffset;
-            
-            float pitchMultiplier = Mathf.Pow(2f, semitoneOffset / 12f);
-            eyeBlinkAudioSource.pitch = pitchMultiplier;
-            eyeBlinkAudioSource.clip = baseNoteClip;
-        }
-        else
-        {
-            // Use the pre-made audio clips
-            eyeBlinkAudioSource.clip = eyeBlinkNotes[noteIndex];
-            eyeBlinkAudioSource.pitch = 1f; // Reset pitch to normal
-        }
-        
+        eyeBlinkAudioSource.clip = eyeBlinkNotes[noteIndex];
         eyeBlinkAudioSource.Play();
-        Debug.Log($"Eye blink audio played - Note {noteIndex}");
+        Debug.Log($"Eye blink audio played (note index: {noteIndex})");
         
-        // Trigger visual effect with the note index
+        // Trigger visual effect - pass the note index to maintain the connection
         if (visualFeedback != null)
         {
             visualFeedback.ShowEyeBlinkEffect(noteIndex);
@@ -292,7 +227,6 @@ public class BeatSource : MonoBehaviour
             visualFeedback.ShowBrowRaiseEffect();
         }
     }
-
     
     // Public method to get the current number of eye blink notes
     public int GetEyeBlinkNoteCount()

@@ -11,5 +11,9 @@ public class Control : MonoBehaviour
     {
         SceneManager.LoadScene("Music"); 
     }
+    public void Back()
+    {
+        SceneManager.LoadScene("Onboarding"); 
+    }
     
 }
